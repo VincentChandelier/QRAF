@@ -26,7 +26,7 @@ Download [Collection of Kodak](https://drive.google.com/file/d/1Fst3a0naKWx28zX-
 or [Kodak](http://r0k.us/graphics/kodak/) for Testing.
 
 # Training
-Using Trainningdataset_Preprocessing.py to select the largest 8000 images from [imageNet](http://www.image-net.org/challenges/LSVRC/2012/dd31405981ef5f776aa17412e1f0c112/ILSVRC2012_img_train.tar) and 584 images from [CLIC2020](https://data.vision.ee.ethz.ch/cvl/clic/professional_train_2020.zip) and to preprocess the images as the training dataset.
+Using Trainningdataset_Preprocessing.py to select the largest 8000 images from [imageNet](https://image-net.org/challenges/LSVRC/2012/2012-downloads.php) and 584 images from [CLIC2020](https://data.vision.ee.ethz.ch/cvl/clic/professional_train_2020.zip) and to preprocess the images as the training dataset.
 ## Parameters
 - `dataset`: dir. "Directory of training and validation dataset."
 
