@@ -8,6 +8,13 @@ Official implementation of "QVRF: A QUANTIZATION-ERROR-AWARE VARIABLE RATE FRAME
 - [Inference](#Inference)
 - [RD Results](#RD Results)
 
+## Related links
+ * CompressAI: https://github.com/InterDigitalInc/CompressAI
+ * QVRF：https://github.com/bytedance/QRAF
+ * SADN+QVRF：https://github.com/VincentChandelier/SADN-QVRF
+ * ELIC+QVRF: https://github.com/VincentChandelier/ELIC-QVRF
+ * STF+QVRF: https://github.com/VincentChandelier/STF-QVRF
+
 # Environment
 Recommend using Miniconda.
 ```
