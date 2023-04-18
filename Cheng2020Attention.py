@@ -207,14 +207,14 @@ class Cheng2020Attention(CompressionModel):
     def forward(self, x, noise=False, stage=3, s=1):
         if stage > 1:
             if s != 0:
-                scale = torch.max(self.Gain[s], torch.tensor(1e-4)) + eps
+                QuantizationRegulator = torch.max(self.Gain[s], torch.tensor(1e-4)) + eps
             else:
                 s = 0
-                scale = self.Gain[s].detach()
+                QuantizationRegulator = self.Gain[s].detach()
         else:
-            scale = self.Gain[0].detach()
+            QuantizationRegulator = self.Gain[0].detach()
 
-        rescale = 1.0 / scale.clone().detach()
+        ReQuantizationRegulator = 1.0 / QuantizationRegulator.clone().detach()
 
         if noise:
             y = self.g_a(x)
@@ -222,13 +222,13 @@ class Cheng2020Attention(CompressionModel):
             z_hat, z_likelihoods = self.entropy_bottleneck(z)
             params = self.h_s(z_hat)
 
-            y_hat = self.gaussian_conditional.quantize(y*scale, "noise" if self.training else "dequantize") * rescale
+            y_hat = self.gaussian_conditional.quantize(y*QuantizationRegulator, "noise" if self.training else "dequantize") * ReQuantizationRegulator
             ctx_params = self.context_prediction(y_hat)
             gaussian_params = self.entropy_parameters(
                 torch.cat((params, ctx_params), dim=1)
             )
             scales_hat, means_hat = gaussian_params.chunk(2, 1)
-            _, y_likelihoods = self.gaussian_conditional(y*scale - means_hat*scale, scales_hat*scale)
+            _, y_likelihoods = self.gaussian_conditional(y*QuantizationRegulator - means_hat*QuantizationRegulator, scales_hat*QuantizationRegulator)
             x_hat = self.g_s(y_hat)
         else:
             y = self.g_a(x)
@@ -243,7 +243,7 @@ class Cheng2020Attention(CompressionModel):
             kernel_size = 5  # context prediction kernel size
             padding = (kernel_size - 1) // 2
             y_hat = F.pad(y, (padding, padding, padding, padding))
-            y_hat, y_likelihoods = self._stequantization(y_hat, params, y.size(2), y.size(3), kernel_size, padding, scale, rescale)
+            y_hat, y_likelihoods = self._stequantization(y_hat, params, y.size(2), y.size(3), kernel_size, padding, QuantizationRegulator, ReQuantizationRegulator)
 
             x_hat = self.g_s(y_hat)
 
@@ -252,8 +252,8 @@ class Cheng2020Attention(CompressionModel):
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
 
-    def _stequantization(self, y_hat, params, height, width, kernel_size, padding, scale, rescale):
-        y_likelihoods = torch.zeros([y_hat.size(0), y_hat.size(1), height, width]).to(scale.device)
+    def _stequantization(self, y_hat, params, height, width, kernel_size, padding, QuantizationRegulator, ReQuantizationRegulator):
+        y_likelihoods = torch.zeros([y_hat.size(0), y_hat.size(1), height, width]).to(QuantizationRegulator.device)
         # TODO: profile the calls to the bindings...
         masked_weight = self.context_prediction.weight * self.context_prediction.mask
         for h in range(height):
@@ -273,10 +273,10 @@ class Cheng2020Attention(CompressionModel):
                 scales_hat, means_hat = gaussian_params.chunk(2, 1)
                 y_crop = y_crop[:, :, padding, padding]
                 _, y_likelihoods[:, :, h: h + 1, w: w + 1] = self.gaussian_conditional(
-                    ((y_crop - means_hat) * scale).unsqueeze(2).unsqueeze(3),
-                    (scales_hat * scale).unsqueeze(2).unsqueeze(3))
-                y_q = self.quantizer.quantize((y_crop - means_hat.detach()) * scale,
-                                        "ste") * rescale + means_hat.detach()
+                    ((y_crop - means_hat) * QuantizationRegulator).unsqueeze(2).unsqueeze(3),
+                    (scales_hat * QuantizationRegulator).unsqueeze(2).unsqueeze(3))
+                y_q = self.quantizer.quantize((y_crop - means_hat.detach()) * QuantizationRegulator,
+                                        "ste") * ReQuantizationRegulator + means_hat.detach()
                 y_hat[:, :, h + padding, w + padding] = y_q
         y_hat = F.pad(y_hat, (-padding, -padding, -padding, -padding))
         return y_hat, y_likelihoods
@@ -310,13 +310,15 @@ class Cheng2020Attention(CompressionModel):
                 "Inference on GPU is not recommended for the autoregressive "
                 "models (the entropy coder is run sequentially on CPU)."
             )
+
         if inputscale != 0:
-            scale = inputscale
+            QuantizationRegulator = inputscale
         else:
             assert s in range(0, self.levels), f"s should in range(0, {self.levels}), but get s:{s}"
-            scale = torch.abs(self.Gain[s])
+            QuantizationRegulator = torch.abs(self.Gain[s])
 
-        rescale = torch.tensor(1.0) / scale
+        ReQuantizationRegulator = torch.tensor(1.0) / QuantizationRegulator
+
         y = self.g_a(x)
         z = self.h_a(y)
         z_strings = self.entropy_bottleneck.compress(z)
@@ -339,14 +341,14 @@ class Cheng2020Attention(CompressionModel):
                 y_width,
                 kernel_size,
                 padding,
-                scale,
-                rescale,
+                QuantizationRegulator,
+                ReQuantizationRegulator,
             )
             y_strings.append(string)
 
         return {"strings": [y_strings, z_strings], "shape": z.size()[-2:]}
 
-    def _compress_ar(self, y_hat, params, height, width, kernel_size, padding, scale, rescale,):
+    def _compress_ar(self, y_hat, params, height, width, kernel_size, padding, QuantizationRegulator, ReQuantizationRegulator,):
         cdf = self.gaussian_conditional.quantized_cdf.tolist()
         cdf_lengths = self.gaussian_conditional.cdf_length.tolist()
         offsets = self.gaussian_conditional.offset.tolist()
@@ -373,11 +375,11 @@ class Cheng2020Attention(CompressionModel):
                 gaussian_params = gaussian_params.squeeze(3).squeeze(2)
                 scales_hat, means_hat = gaussian_params.chunk(2, 1)
 
-                indexes = self.gaussian_conditional.build_indexes(scales_hat * scale)
+                indexes = self.gaussian_conditional.build_indexes(scales_hat * QuantizationRegulator)
 
                 y_crop = y_crop[:, :, padding, padding]
-                y_q = self.gaussian_conditional.quantize((y_crop - means_hat)* scale, "symbols")
-                y_hat[:, :, h + padding, w + padding] = (y_q) * rescale + means_hat
+                y_q = self.gaussian_conditional.quantize((y_crop - means_hat)* QuantizationRegulator, "symbols")
+                y_hat[:, :, h + padding, w + padding] = (y_q) * ReQuantizationRegulator + means_hat
 
                 symbols_list.extend(y_q.squeeze().tolist())
                 indexes_list.extend(indexes.squeeze().tolist())
@@ -398,12 +400,12 @@ class Cheng2020Attention(CompressionModel):
                 "models (the entropy coder is run sequentially on CPU)."
             )
         if inputscale != 0:
-            scale = inputscale
+            QuantizationRegulator = inputscale
         else:
             assert s in range(0, self.levels), f"s should in range(0, {self.levels}), but get s:{s}"
-            scale = torch.abs(self.Gain[s])
+            QuantizationRegulator = torch.abs(self.Gain[s])
 
-        rescale = torch.tensor(1.0) / scale
+        ReQuantizationRegulator = torch.tensor(1.0) / QuantizationRegulator
 
         # FIXME: we don't respect the default entropy coder and directly call the
         # range ANS decoder
@@ -433,8 +435,8 @@ class Cheng2020Attention(CompressionModel):
                 y_width,
                 kernel_size,
                 padding,
-                scale,
-                rescale,
+                QuantizationRegulator,
+                ReQuantizationRegulator,
             )
 
         y_hat = F.pad(y_hat, (-padding, -padding, -padding, -padding))
@@ -442,7 +444,7 @@ class Cheng2020Attention(CompressionModel):
         return {"x_hat": x_hat}
 
     def _decompress_ar(
-            self, y_string, y_hat, params, height, width, kernel_size, padding, scale, rescale
+            self, y_string, y_hat, params, height, width, kernel_size, padding, QuantizationRegulator, ReQuantizationRegulator
     ):
         cdf = self.gaussian_conditional.quantized_cdf.tolist()
         cdf_lengths = self.gaussian_conditional.cdf_length.tolist()
@@ -470,12 +472,12 @@ class Cheng2020Attention(CompressionModel):
                 gaussian_params = self.entropy_parameters(torch.cat((p, ctx_p), dim=1))
                 scales_hat, means_hat = gaussian_params.chunk(2, 1)
 
-                indexes = self.gaussian_conditional.build_indexes(scales_hat* scale)
+                indexes = self.gaussian_conditional.build_indexes(scales_hat* QuantizationRegulator)
                 rv = decoder.decode_stream(
                     indexes.squeeze().tolist(), cdf, cdf_lengths, offsets
                 )
                 rv = torch.Tensor(rv).reshape(1, -1, 1, 1)
-                rv = self.gaussian_conditional.dequantize(rv)*rescale + means_hat
+                rv = self.gaussian_conditional.dequantize(rv)*ReQuantizationRegulator + means_hat
 
                 hp = h + padding
                 wp = w + padding

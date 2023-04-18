@@ -169,23 +169,23 @@ class ScaleHyperprior(CompressionModel):
     def forward(self, x, noise=False, stage=3, s=1):
         if stage > 1:
             if s != 0:
-                scale = torch.max(self.Gain[s], torch.tensor(1e-4)) + eps
+                QuantizationRegulator = torch.max(self.Gain[s], torch.tensor(1e-4)) + eps
             else:
                 s = 0
-                scale = self.Gain[s].detach()
+                QuantizationRegulator = self.Gain[s].detach()
         else:
-            scale = self.Gain[0].detach()
+            QuantizationRegulator = self.Gain[0].detach()
 
-        rescale = 1.0 / scale.clone().detach()
+        ReQuantizationRegulator = 1.0 / QuantizationRegulator.clone().detach()
 
         if noise:
             y = self.g_a(x)
             z = self.h_a(torch.abs(y))
             z_hat, z_likelihoods = self.entropy_bottleneck(z)
             scales_hat = self.h_s(z_hat)
-            y_hat = self.gaussian_conditional.quantize(y * scale,
-                                                       "noise" if self.training else "dequantize") * rescale
-            _, y_likelihoods = self.gaussian_conditional(y * scale, scales_hat * scale)
+            y_hat = self.gaussian_conditional.quantize(y * QuantizationRegulator,
+                                                       "noise" if self.training else "dequantize") * ReQuantizationRegulator
+            _, y_likelihoods = self.gaussian_conditional(y * QuantizationRegulator, scales_hat * QuantizationRegulator)
             x_hat = self.g_s(y_hat)
         else:
             y = self.g_a(x)
@@ -197,8 +197,8 @@ class ScaleHyperprior(CompressionModel):
             z_hat = ste_round(z_tmp) + z_offset
 
             scales_hat = self.h_s(z_hat)
-            y_hat = self.quantizer.quantize(y * scale, "ste") * rescale
-            _, y_likelihoods = self.gaussian_conditional(y * scale, scales_hat * scale)
+            y_hat = self.quantizer.quantize(y * QuantizationRegulator, "ste") * ReQuantizationRegulator
+            _, y_likelihoods = self.gaussian_conditional(y * QuantizationRegulator, scales_hat * QuantizationRegulator)
             x_hat = self.g_s(y_hat)
 
         return {
@@ -238,12 +238,13 @@ class ScaleHyperprior(CompressionModel):
                 "models (the entropy coder is run sequentially on CPU)."
             )
         if inputscale != 0:
-            scale = inputscale
+            QuantizationRegulator = inputscale
         else:
             assert s in range(0, self.levels), f"s should in range(0, {self.levels}), but get s:{s}"
-            scale = torch.abs(self.Gain[s])
+            QuantizationRegulator = torch.abs(self.Gain[s])
 
-        rescale = torch.tensor(1.0) / scale
+        ReQuantizationRegulator = torch.tensor(1.0) / QuantizationRegulator
+
         y = self.g_a(x)
         z = self.h_a(torch.abs(y))
 
@@ -251,24 +252,24 @@ class ScaleHyperprior(CompressionModel):
         z_hat = self.entropy_bottleneck.decompress(z_strings, z.size()[-2:])
 
         scales_hat = self.h_s(z_hat)
-        indexes = self.gaussian_conditional.build_indexes(scales_hat * scale)
-        y_strings = self.gaussian_conditional.compress(y * scale, indexes)
+        indexes = self.gaussian_conditional.build_indexes(scales_hat * QuantizationRegulator)
+        y_strings = self.gaussian_conditional.compress(y * QuantizationRegulator, indexes)
         return {"strings": [y_strings, z_strings], "shape": z.size()[-2:]}
 
     def decompress(self, strings, shape, s, inputscale):
         assert isinstance(strings, list) and len(strings) == 2
         if inputscale != 0:
-            scale = inputscale
+            QuantizationRegulator = inputscale
         else:
             assert s in range(0, self.levels), f"s should in range(0, {self.levels}), but get s:{s}"
-            scale = torch.abs(self.Gain[s])
+            QuantizationRegulator = torch.abs(self.Gain[s])
 
-        rescale = torch.tensor(1.0) / scale
+        ReQuantizationRegulator = torch.tensor(1.0) / QuantizationRegulator
 
         z_hat = self.entropy_bottleneck.decompress(strings[1], shape)
         scales_hat = self.h_s(z_hat)
-        indexes = self.gaussian_conditional.build_indexes(scales_hat * scale)
-        y_hat = self.gaussian_conditional.decompress(strings[0], indexes) * rescale
+        indexes = self.gaussian_conditional.build_indexes(scales_hat * QuantizationRegulator)
+        y_hat = self.gaussian_conditional.decompress(strings[0], indexes) * ReQuantizationRegulator
         x_hat = self.g_s(y_hat).clamp_(0, 1)
         return {"x_hat": x_hat}
 
