@@ -14,6 +14,8 @@ Official implementation of "QVRF: A QUANTIZATION-ERROR-AWARE VARIABLE RATE FRAME
  * SADN+QVRF：https://github.com/VincentChandelier/SADN-QVRF
  * ELIC+QVRF: https://github.com/VincentChandelier/ELIC-QVRF
  * STF+QVRF: https://github.com/VincentChandelier/STF-QVRF
+ * GACN+QVRF: https://github.com/VincentChandelier/GACN-QVRF
+ * Zhihu Article: https://zhuanlan.zhihu.com/p/627068173
 
 # Environment
 Recommend using Miniconda.
