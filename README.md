@@ -163,3 +163,14 @@ We re-trained 8 Cheng2020 models on our training dataset from low bitrate and hi
 ### Comparison of variable rate methods.The baseline is Cheng2020 and use 8 fix-rate models as anchor
 ![](assets/Cheng2020.png)
 
+@INPROCEEDINGS{10222717,
+  author={Tong, Kedeng and Wu, Yaojun and Li, Yue and Zhang, Kai and Zhang, Li and Jin, Xin},
+  booktitle={2023 IEEE International Conference on Image Processing (ICIP)}, 
+  title={QVRF: A Quantization-Error-Aware Variable Rate Framework for Learned Image Compression}, 
+  year={2023},
+  volume={},
+  number={},
+  pages={1310-1314},
+  doi={10.1109/ICIP49359.2023.10222717}}
+```
+
